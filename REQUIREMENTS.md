@@ -74,6 +74,7 @@ Your content here...
 | `slug` | string | slugified title | Must be unique per language |
 | `description` | string | `""` | Cards, RSS, og:description |
 | `tags` | list | `[]` | Creates tag index pages |
+| `translations` | dict | `{}` | Maps to translated slugs, e.g. `{en: my-post-en}`. Declaring it on one post of a pair is enough — the reverse link is built automatically. Posts without a translation fall back to the other language's index. |
 | `series` | string | `""` | Groups posts into a series |
 | `series_part` | int | `null` | Order within the series |
 | `toc` | bool | `true` | Show ToC when ≥3 headings |
@@ -115,6 +116,7 @@ Edit `config.py`:
 | `SITE_DESCRIPTION` | Default meta description |
 | `AUTHOR` | Default post author |
 | `PORT` | Dev port (overridden by `$PORT` in production) |
+| `SITE_URL` | Canonical URL used in og tags and RSS links (set the `SITE_URL` env var in production; defaults to `http://localhost:$PORT`) |
 | `DEFAULT_LANG` | Language served at `/` |
 | `SUPPORTED_LANGS` | Both languages, e.g. `["es", "en"]` |
 | `NAV_LINKS` | Per-language nav items |
@@ -189,6 +191,6 @@ Feeds include the 20 most recent posts. Autodiscovery `<link>` tags are injected
 1. Push the repo to GitHub
 2. Create a new Railway project from the repo
 3. Railway detects the `Procfile` and sets `$PORT` automatically
-4. No environment variables needed beyond `PORT` (set by Railway)
+4. Set a `SITE_URL` environment variable to your production URL (used for og tags and RSS links). No other environment variables needed — `PORT` is set by Railway.
 
 The `static/pygments.css` file is gitignored and regenerated at startup.

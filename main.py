@@ -17,7 +17,7 @@ from starlette.staticfiles import StaticFiles
 from fasthtml.common import *
 
 from config import (
-    SITE_NAME, AUTHOR, PORT,
+    SITE_NAME, SITE_URL, AUTHOR, PORT,
     DEFAULT_LANG, SUPPORTED_LANGS, NAV_LINKS, UI_STRINGS,
 )
 
@@ -155,6 +155,7 @@ def load_posts(lang: str) -> list[dict]:
             "author":       post.get("author", AUTHOR),
             "description":  post.get("description", ""),
             "tags":         post.get("tags", []),
+            "translations": post.get("translations", {}),
             "series":       post.get("series", ""),
             "series_part":  post.get("series_part", None),
             "toc_enabled":  post.get("toc", True),
@@ -181,6 +182,20 @@ POST_INDEX: dict[str, dict[str, dict]] = {
     lang: {p["slug"]: p for p in load_posts(lang)}
     for lang in SUPPORTED_LANGS
 }
+
+
+# Translation index: (lang, slug) -> {other_lang: other_slug}. Declaring a
+# translation on one post of a pair is enough — the reverse edge is added here.
+TRANSLATIONS: dict[tuple[str, str], dict[str, str]] = {}
+for _lang in SUPPORTED_LANGS:
+    for _post in POST_INDEX[_lang].values():
+        for _other_lang, _other_slug in _post.get("translations", {}).items():
+            TRANSLATIONS.setdefault((_lang, _post["slug"]), {})[_other_lang] = _other_slug
+            TRANSLATIONS.setdefault((_other_lang, _other_slug), {})[_lang] = _post["slug"]
+for (_lang, _slug), _targets in TRANSLATIONS.items():
+    for _t_lang, _t_slug in _targets.items():
+        if _t_slug not in POST_INDEX.get(_t_lang, {}):
+            print(f"warning: translation {_t_lang}/{_t_slug} (from {_lang}/{_slug}) not found")
 
 
 def get_post(slug: str, lang: str) -> dict | None:
@@ -266,14 +281,25 @@ def _lang_toggle_href(path: str, current_lang: str) -> str:
     other = _secondary_lang if current_lang == DEFAULT_LANG else DEFAULT_LANG
     default_root = "/"
     other_root   = f"/{_secondary_lang}/"
+    other_index  = other_root if other == _secondary_lang else default_root
+
+    # Post pages: slugs differ per language — follow the translation map,
+    # falling back to the other language's index when no translation exists.
+    m = re.match(rf"^/posts/{current_lang}/(.+)$", path)
+    if m:
+        other_slug = TRANSLATIONS.get((current_lang, m.group(1)), {}).get(other)
+        if other_slug:
+            return f"/posts/{other}/{other_slug}"
+        return other_index
+
     if path in (default_root, other_root):
-        return other_root if other == _secondary_lang else default_root
+        return other_index
     parts = path.split("/")
     for i, part in enumerate(parts):
         if part in SUPPORTED_LANGS:
             parts[i] = other
             return "/".join(parts)
-    return other_root if other == _secondary_lang else default_root
+    return other_index
 
 
 def nav_bar(lang: str, current_path: str):
@@ -283,13 +309,11 @@ def nav_bar(lang: str, current_path: str):
     theme_btn = Button(
         s["toggle_theme"],
         cls="theme-btn",
-        hx_post="/set-theme",
-        hx_swap="none",
-        hx_vals="js:{current_theme: document.documentElement.getAttribute('data-theme')}",
         onclick=(
             "var h=document.documentElement,"
             "n=h.getAttribute('data-theme')==='dark'?'light':'dark';"
             "h.setAttribute('data-theme',n);"
+            "document.cookie='theme='+n+';path=/;max-age=31536000;samesite=lax';"
         ),
     )
     home_href = "/" if lang == DEFAULT_LANG else f"/{_secondary_lang}/"
@@ -312,7 +336,7 @@ def site_footer(lang: str):
 
 
 def _og_tags(title: str, description: str, url: str):
-    base_url = f"https://{SITE_NAME}"
+    base_url = SITE_URL
     return (
         Meta(property="og:type",        content="article"),
         Meta(property="og:title",       content=f"{title} | {SITE_NAME}"),
@@ -464,7 +488,7 @@ def blog_index_content(posts: list[dict], lang: str):
 
 def _build_rss(lang: str) -> str:
     s        = UI_STRINGS[lang]
-    base     = f"https://{SITE_NAME}"
+    base     = SITE_URL
     root     = Element("rss", version="2.0")
     root.set("xmlns:atom", "http://www.w3.org/2005/Atom")
     channel  = SubElement(root, "channel")
@@ -506,8 +530,8 @@ def blog_index_default(req):
 def blog_post_default(req, slug: str):
     post = get_post(slug, DEFAULT_LANG)
     if not post:
-        return page_shell("404", DEFAULT_LANG, f"/posts/{DEFAULT_LANG}/{slug}", "",
-                          not_found_page(DEFAULT_LANG))
+        return FtResponse(page_shell("404", DEFAULT_LANG, f"/posts/{DEFAULT_LANG}/{slug}", "",
+                          not_found_page(DEFAULT_LANG)), status_code=404)
     return page_shell(post["title"], DEFAULT_LANG, f"/posts/{DEFAULT_LANG}/{slug}",
                       post.get("description", ""), *post_page_content(post, DEFAULT_LANG))
 
@@ -534,8 +558,8 @@ def blog_index_secondary(req):
 def blog_post_secondary(req, slug: str):
     post = get_post(slug, _secondary_lang)
     if not post:
-        return page_shell("404", _secondary_lang, f"/posts/{_secondary_lang}/{slug}", "",
-                          not_found_page(_secondary_lang))
+        return FtResponse(page_shell("404", _secondary_lang, f"/posts/{_secondary_lang}/{slug}", "",
+                          not_found_page(_secondary_lang)), status_code=404)
     return page_shell(post["title"], _secondary_lang, f"/posts/{_secondary_lang}/{slug}",
                       post.get("description", ""), *post_page_content(post, _secondary_lang))
 
@@ -597,21 +621,22 @@ def rss_secondary(req):
     return Response(_build_rss(_secondary_lang), media_type="application/rss+xml; charset=utf-8")
 
 
-# ── Theme toggle ──────────────────────────────────────────────────────────────
-
-@app.post("/set-theme")
-async def set_theme(req):
-    form      = await req.form()
-    current   = form.get("current_theme", "dark")
-    new_theme = "light" if current == "dark" else "dark"
-    resp      = Response(status_code=204)
-    resp.set_cookie("theme", new_theme, max_age=60 * 60 * 24 * 365, samesite="lax", path="/")
-    return resp
-
-
 # ── Static files ──────────────────────────────────────────────────────────────
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+# ── Catch-all 404 ──────────────────────────────────────────────────────────────
+
+_REDIRECTABLE = {"tags"} | set(SUPPORTED_LANGS) | {f"posts/{l}" for l in SUPPORTED_LANGS}
+
+@app.get("/{path:path}")
+def not_found_catchall(req, path: str):
+    if path in _REDIRECTABLE:
+        return Redirect(f"/{path}/")
+    lang = _secondary_lang if path.startswith(_secondary_lang + "/") else DEFAULT_LANG
+    return FtResponse(page_shell("404", lang, f"/{path}", "", not_found_page(lang)),
+                      status_code=404)
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

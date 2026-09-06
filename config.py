@@ -5,6 +5,7 @@ SITE_NAME        = "pypost"
 SITE_DESCRIPTION = "A blog built with pypost."
 AUTHOR           = "author"
 PORT             = int(os.environ.get("PORT", 8000))
+SITE_URL         = os.environ.get("SITE_URL", f"http://localhost:{PORT}")
 
 # ── Language ──────────────────────────────────────────────────────────────────
 DEFAULT_LANG    = "es"          # serves at /  (other lang at /en/)
