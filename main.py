@@ -13,10 +13,11 @@ from pygments import highlight as pygments_highlight
 from pygments.lexers import get_lexer_by_name, TextLexer
 from pygments.formatters import HtmlFormatter
 from pygments.util import ClassNotFound
+from starlette.staticfiles import StaticFiles
 from fasthtml.common import *
 
 from config import (
-    SITE_NAME, SITE_DESCRIPTION, AUTHOR, PORT,
+    SITE_NAME, AUTHOR, PORT,
     DEFAULT_LANG, SUPPORTED_LANGS, NAV_LINKS, UI_STRINGS,
 )
 
@@ -610,9 +611,7 @@ async def set_theme(req):
 
 # ── Static files ──────────────────────────────────────────────────────────────
 
-@app.get("/static/{fname:path}")
-async def static_files(fname: str):
-    return FileResponse(f"static/{fname}")
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
