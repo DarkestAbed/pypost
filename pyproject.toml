@@ -1,0 +1,12 @@
+[project]
+name = "pypost"
+version = "0.1.0"
+description = "Minimal bilingual blog framework — FastHTML + Markdown"
+requires-python = ">=3.13"
+dependencies = [
+    "mistune>=3.0",
+    "pygments>=2.18",
+    "python-fasthtml>=0.12.50",
+    "python-frontmatter>=1.1.0",
+    "uvicorn>=0.29",
+]
