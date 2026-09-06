@@ -3,6 +3,5 @@ __pycache__/
 *.py[oc]
 .python-version
 .sesskey
-uv.lock
 static/pygments.css
 docs/20260906-preprod_assessment.md

@@ -5,8 +5,8 @@ published: true
 slug: features-demo
 description: "Demonstrates syntax highlighting, Table of Contents, and series navigation."
 tags: [demo, python]
-series: "Getting Started"
-series_part: 1
+series: "Primeros pasos"
+series_part: 2
 toc: true
 ---
 
@@ -58,11 +58,11 @@ When a post has **3 or more h2/h3 headings**, a sticky ToC sidebar is generated 
 Posts in the same series are linked with prev/next navigation. Set `series` and `series_part` in frontmatter:
 
 ```yaml
-series: "Getting Started"
-series_part: 1
+series: "Primeros pasos"
+series_part: 2
 ```
 
-The nav bar at the bottom of this page shows a "Next →" link pointing to part 2 (if it exists). This works across languages — parts can be in different languages within the same series.
+The nav bar at the bottom of this page links to the previous/next part of the series. This works across languages — this post is part 2 in English and links back to part 1 in Spanish.
 
 ### Adding more parts
 

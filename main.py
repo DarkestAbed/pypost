@@ -1,6 +1,7 @@
 import os
 import re
 import time
+from html import escape as html_escape
 from html.parser import HTMLParser
 from pathlib import Path
 from xml.etree.ElementTree import Element, SubElement, tostring
@@ -14,10 +15,11 @@ from pygments.lexers import get_lexer_by_name, TextLexer
 from pygments.formatters import HtmlFormatter
 from pygments.util import ClassNotFound
 from starlette.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 from fasthtml.common import *
 
 from config import (
-    SITE_NAME, SITE_URL, AUTHOR, PORT,
+    SITE_NAME, SITE_URL, SITE_IMAGE, AUTHOR, PORT, POSTS_PER_PAGE,
     DEFAULT_LANG, SUPPORTED_LANGS, NAV_LINKS, UI_STRINGS,
 )
 
@@ -32,13 +34,19 @@ class TechnicalRenderer(mistune.HTMLRenderer):
             lexer = TextLexer()
         formatter = HtmlFormatter(cssclass="highlight", nowrap=False)
         highlighted = pygments_highlight(code, lexer, formatter)
-        label = f'<span class="code-lang">{lang_clean}</span>' if lang_clean else ""
+        label = f'<span class="code-lang">{html_escape(lang_clean)}</span>' if lang_clean else ""
         copy_btn = '<button class="copy-btn" onclick="copyCode(this)" aria-label="Copy code">copy</button>'
         return f'<div class="code-block">{label}{copy_btn}{highlighted}</div>\n'
 
     def heading(self, text: str, level: int, **attrs) -> str:
         plain = re.sub(r"<[^>]+>", "", text)
-        anchor = _slugify(plain)
+        anchor = _slugify(plain) or "section"
+        # Unique ids: duplicate heading texts get -2, -3, … suffixes
+        seen = getattr(self, "_anchors", {})
+        seen[anchor] = n = seen.get(anchor, 0) + 1
+        self._anchors = seen
+        if n > 1:
+            anchor = f"{anchor}-{n}"
         return f'<h{level} id="{anchor}">{text}</h{level}>\n'
 
 
@@ -47,6 +55,12 @@ md = mistune.create_markdown(
     renderer=_md_renderer,
     plugins=["table", "strikethrough", "task_lists"],
 )
+
+
+def render_md(text: str) -> str:
+    "Render one document; resets heading-anchor state so ids are unique per post/page."
+    _md_renderer._anchors = {}
+    return md(text)
 
 # ── Pygments CSS (generated once at startup) ──────────────────────────────────
 
@@ -111,6 +125,10 @@ _MONTHS_ES = [
     "", "enero", "febrero", "marzo", "abril", "mayo", "junio",
     "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
 ]
+_MONTHS_EN = [
+    "", "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+]
 
 
 def _format_date(raw, lang: str) -> str:
@@ -119,7 +137,7 @@ def _format_date(raw, lang: str) -> str:
     if hasattr(raw, "strftime"):
         if lang == "es":
             return f"{raw.day} de {_MONTHS_ES[raw.month]} de {raw.year}"
-        return raw.strftime("%B %d, %Y")
+        return f"{_MONTHS_EN[raw.month]} {raw.day:02d}, {raw.year}"
     return str(raw)
 
 
@@ -145,7 +163,7 @@ def load_posts(lang: str) -> list[dict]:
         seen_slugs[slug] = str(path)
 
         raw_date     = post.get("date")
-        content_html = md(post.content)
+        content_html = render_md(post.content)
 
         posts.append({
             "slug":         slug,
@@ -168,12 +186,12 @@ def load_posts(lang: str) -> list[dict]:
     return sorted(posts, key=lambda p: p["date"] or datetime.min, reverse=True)
 
 
-def load_page(path_str: str) -> str:
+def load_page(path_str: str) -> tuple[str, str] | None:
     path = Path(path_str)
     if not path.exists():
-        return ""
-    post = fm.load(str(path))
-    return md(post.content)
+        return None
+    page = fm.load(str(path))
+    return page.get("title", path.stem), render_md(page.content)
 
 
 # ── Indexes (built once at startup) ───────────────────────────────────────────
@@ -239,6 +257,23 @@ def get_series_neighbors(post: dict) -> tuple[dict | None, dict | None]:
     return None, None
 
 
+# Page index: lang -> sorted page stems (files under pages/{lang}/)
+PAGES_INDEX: dict[str, list[str]] = {
+    lang: sorted(p.stem for p in (Path("pages") / lang).glob("*.md"))
+    for lang in SUPPORTED_LANGS
+}
+
+# Tag slugs: original tag -> URL-safe slug (unique), plus the reverse map.
+TAG_SLUGS: dict[str, str] = {}
+for _tag in sorted(TAG_INDEX):
+    _slug, _base, _n = _slugify(_tag) or "tag", None, 2
+    _base = _slug
+    while _slug in TAG_SLUGS.values():
+        _slug, _n = f"{_base}-{_n}", _n + 1
+    TAG_SLUGS[_tag] = _slug
+SLUG_TAGS: dict[str, str] = {v: k for k, v in TAG_SLUGS.items()}
+
+
 # ── App setup ─────────────────────────────────────────────────────────────────
 
 theme_init = Script("""
@@ -259,29 +294,91 @@ function copyCode(btn) {
 }
 """)
 
-pico_css    = Link(rel="stylesheet", href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.classless.min.css")
+favicon     = Link(rel="icon", href="/static/favicon.svg", type="image/svg+xml")
+pico_css    = Link(rel="stylesheet", href="/static/vendor/pico.classless.min.css")
 pygments_css = Link(rel="stylesheet", href="/static/pygments.css")
 custom_css  = Link(rel="stylesheet", href="/static/custom.css")
-inter_font  = Link(
-    rel="stylesheet",
-    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap",
-)
+
+# default_hdrs=False drops FastHTML's CDN scripts (htmx, fasthtml.js, surreal,
+# css-scope-inline) — this app uses no htmx attributes, so none are needed and
+# no requests leave the site. charset/viewport are re-added explicitly.
+def _lang_root(lang: str) -> str:
+    "URL root for a language: '/' for the default language, '/{lang}/' otherwise."
+    return "/" if lang == DEFAULT_LANG else f"/{lang}/"
+
+
+def _next_lang(lang: str) -> str:
+    "Language the nav toggle cycles to."
+    return SUPPORTED_LANGS[(SUPPORTED_LANGS.index(lang) + 1) % len(SUPPORTED_LANGS)]
+
+
+def _detect_lang(path: str) -> str:
+    "Language of a URL path, inferred from a /{lang}/ prefix (default otherwise)."
+    for lang in SUPPORTED_LANGS:
+        if lang != DEFAULT_LANG and (path == f"/{lang}" or path.startswith(f"/{lang}/")):
+            return lang
+    return DEFAULT_LANG
+
+
+def _before(req):
+    # Per-request <html> attributes: language and theme (from the cookie, so
+    # light-theme users don't get a dark flash before the inline script runs).
+    req.htmlkw["lang"] = _detect_lang(req.url.path)
+    theme = req.cookies.get("theme")
+    if theme in ("dark", "light"):
+        req.htmlkw["data-theme"] = theme
+
 
 app = FastHTML(
-    hdrs=(theme_init, inter_font, pico_css, pygments_css, custom_css, copy_script),
+    default_hdrs=False,
+    before=_before,
+    hdrs=(charset, viewport, favicon, theme_init, pico_css, pygments_css, custom_css, copy_script),
     htmlkw={"data-theme": "dark"},
 )
 
-_secondary_lang = next(l for l in SUPPORTED_LANGS if l != DEFAULT_LANG)
+# Inline scripts (theme init, copy button, inline onclick handlers) are the only
+# JS in the app, hence the single 'unsafe-inline' in script-src. All assets are
+# self-hosted — no external origins are allowed.
+_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline'; "
+    "style-src 'self'; "
+    "font-src 'self'; "
+    "img-src 'self' data: https:; "
+    "connect-src 'self'; "
+    "form-action 'self'; "
+    "base-uri 'self'; "
+    "object-src 'none'; "
+    "frame-ancestors 'none'"
+)
+
+
+class _ResponseHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        resp = await call_next(request)
+        resp.headers["X-Content-Type-Options"] = "nosniff"
+        path = request.url.path
+        if path.startswith(("/static/vendor/", "/static/fonts/")):
+            resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        elif path.startswith("/static/"):
+            resp.headers["Cache-Control"] = "public, max-age=86400"
+        else:
+            resp.headers["Content-Security-Policy"] = _CSP
+        return resp
+
+
+app.add_middleware(_ResponseHeadersMiddleware)
 
 
 # ── Components ────────────────────────────────────────────────────────────────
 
 def _lang_toggle_href(path: str, current_lang: str) -> str:
-    other = _secondary_lang if current_lang == DEFAULT_LANG else DEFAULT_LANG
-    default_root = "/"
-    other_root   = f"/{_secondary_lang}/"
-    other_index  = other_root if other == _secondary_lang else default_root
+    other = _next_lang(current_lang)
+    other_index = _lang_root(other)
+
+    # Language roots and the blog index swap to the other language's root
+    if path in ("/", _lang_root(current_lang), f"/posts/{current_lang}/"):
+        return other_index
 
     # Post pages: slugs differ per language — follow the translation map,
     # falling back to the other language's index when no translation exists.
@@ -292,11 +389,15 @@ def _lang_toggle_href(path: str, current_lang: str) -> str:
             return f"/posts/{other}/{other_slug}"
         return other_index
 
-    if path in (default_root, other_root):
-        return other_index
+    # Tag pages keep their location, switching the language root
+    m = re.match(rf"^{_lang_root(current_lang)}tags(/[^/]+)?/?$", path)
+    if m:
+        return f"{other_index}tags{m.group(1) or ''}"
+
+    # Everything else (pages, …): swap the language segment
     parts = path.split("/")
     for i, part in enumerate(parts):
-        if part in SUPPORTED_LANGS:
+        if part == current_lang:
             parts[i] = other
             return "/".join(parts)
     return other_index
@@ -313,10 +414,12 @@ def nav_bar(lang: str, current_path: str):
             "var h=document.documentElement,"
             "n=h.getAttribute('data-theme')==='dark'?'light':'dark';"
             "h.setAttribute('data-theme',n);"
-            "document.cookie='theme='+n+';path=/;max-age=31536000;samesite=lax';"
+            "var c='theme='+n+';path=/;max-age=31536000;samesite=lax'"
+            "+(location.protocol==='https:'?';secure':'');"
+            "document.cookie=c;"
         ),
     )
-    home_href = "/" if lang == DEFAULT_LANG else f"/{_secondary_lang}/"
+    home_href = _lang_root(lang)
     return Nav(
         Div(
             A(SITE_NAME, href=home_href, cls="nav-brand"),
@@ -335,33 +438,50 @@ def site_footer(lang: str):
     )
 
 
-def _og_tags(title: str, description: str, url: str):
+def _og_tags(title: str, description: str, url: str,
+             alternates: dict[str, str] | None = None):
     base_url = SITE_URL
-    return (
+    tags = [
+        Meta(property="og:site_name",   content=SITE_NAME),
         Meta(property="og:type",        content="article"),
         Meta(property="og:title",       content=f"{title} | {SITE_NAME}"),
         Meta(property="og:description", content=description),
         Meta(property="og:url",         content=f"{base_url}{url}"),
         Meta(name="description",        content=description),
-        Link(rel="alternate", type="application/rss+xml",
-             title=f"{SITE_NAME} {DEFAULT_LANG.upper()}", href="/feed.xml"),
-        Link(rel="alternate", type="application/rss+xml",
-             title=f"{SITE_NAME} {_secondary_lang.upper()}", href=f"/feed/{_secondary_lang}.xml"),
-    )
+        Meta(name="twitter:card",        content="summary"),
+        Meta(name="twitter:title",       content=f"{title} | {SITE_NAME}"),
+        Meta(name="twitter:description", content=description),
+    ]
+    if SITE_IMAGE:
+        tags += [
+            Meta(property="og:image",    content=SITE_IMAGE),
+            Meta(name="twitter:image",    content=SITE_IMAGE),
+        ]
+    if alternates:
+        for alt_lang, alt_url in alternates.items():
+            tags.append(Link(rel="alternate", hreflang=alt_lang, href=f"{base_url}{alt_url}"))
+        tags.append(Link(rel="alternate", hreflang="x-default",
+                          href=f"{base_url}{alternates.get(DEFAULT_LANG, url)}"))
+    for lang in SUPPORTED_LANGS:
+        feed = "/feed.xml" if lang == DEFAULT_LANG else f"/feed/{lang}.xml"
+        tags.append(Link(rel="alternate", type="application/rss+xml",
+                         title=f"{SITE_NAME} {lang.upper()}", href=feed))
+    return tuple(tags)
 
 
-def page_shell(title: str, lang: str, current_path: str, description: str = "", *content):
+def page_shell(title: str, lang: str, current_path: str, description: str = "",
+               *content, alternates: dict[str, str] | None = None):
     return (
         Title(f"{title} | {SITE_NAME}"),
-        *_og_tags(title, description, current_path),
+        *_og_tags(title, description, current_path, alternates),
         nav_bar(lang, current_path),
         Main(*content, cls="container"),
         site_footer(lang),
     )
 
 
-def tag_badge(tag: str):
-    return A(tag, href=f"/tags/{tag}", cls="tag")
+def tag_badge(tag: str, lang: str):
+    return A(tag, href=f"{_lang_root(lang)}tags/{TAG_SLUGS[tag]}", cls="tag")
 
 
 def reading_time_badge(minutes: int, lang: str):
@@ -372,7 +492,7 @@ def reading_time_badge(minutes: int, lang: str):
 def post_card(post: dict, lang: str):
     s    = UI_STRINGS[lang]
     href = f"/posts/{lang}/{post['slug']}"
-    tags = [tag_badge(t) for t in post.get("tags", [])]
+    tags = [tag_badge(t, lang) for t in post.get("tags", [])]
     return Article(
         H2(A(post["title"], href=href)),
         P(
@@ -419,8 +539,8 @@ def series_nav(prev_post: dict | None, next_post: dict | None, lang: str):
 
 def post_page_content(post: dict, lang: str):
     s         = UI_STRINGS[lang]
-    back_href = "/" if lang == DEFAULT_LANG else f"/{_secondary_lang}/"
-    tags      = [tag_badge(t) for t in post.get("tags", [])]
+    back_href = _lang_root(lang)
+    tags      = [tag_badge(t, lang) for t in post.get("tags", [])]
     prev_p, next_p = get_series_neighbors(post)
 
     show_toc = post["toc_enabled"] and len(post["toc"]) >= 3
@@ -461,7 +581,7 @@ def post_page_content(post: dict, lang: str):
 
 def not_found_page(lang: str):
     s         = UI_STRINGS[lang]
-    back_href = "/" if lang == DEFAULT_LANG else f"/{_secondary_lang}/"
+    back_href = _lang_root(lang)
     return Div(
         H1("404"),
         P(s["not_found"]),
@@ -471,9 +591,24 @@ def not_found_page(lang: str):
     )
 
 
-def blog_index_content(posts: list[dict], lang: str):
+def pagination_nav(lang: str, page: int, total: int):
+    pages = max(1, -(-total // POSTS_PER_PAGE))
+    if pages <= 1:
+        return ""
     s     = UI_STRINGS[lang]
-    cards = [post_card(p, lang) for p in posts]
+    root  = _lang_root(lang)
+    items = []
+    if page > 1:
+        items.append(A(s["newer_posts"], href=f"{root}?page={page - 1}", cls="pager-newer"))
+    if page < pages:
+        items.append(A(s["older_posts"], href=f"{root}?page={page + 1}", cls="pager-older"))
+    return Nav(*items, cls="pagination")
+
+
+def blog_index_content(posts: list[dict], lang: str, page: int = 1):
+    s     = UI_STRINGS[lang]
+    start = (page - 1) * POSTS_PER_PAGE
+    cards = [post_card(p, lang) for p in posts[start:start + POSTS_PER_PAGE]]
     return (
         Div(
             H1(SITE_NAME),
@@ -481,6 +616,7 @@ def blog_index_content(posts: list[dict], lang: str):
             cls="page-header",
         ),
         Div(*cards, cls="post-list") if cards else P(s["no_posts"], cls="post-meta"),
+        pagination_nav(lang, page, len(posts)),
     )
 
 
@@ -491,11 +627,13 @@ def _build_rss(lang: str) -> str:
     base     = SITE_URL
     root     = Element("rss", version="2.0")
     root.set("xmlns:atom", "http://www.w3.org/2005/Atom")
+    root.set("xmlns:content", "http://purl.org/rss/1.0/modules/content/")
     channel  = SubElement(root, "channel")
     SubElement(channel, "title").text       = s["rss_title"]
     SubElement(channel, "link").text        = base
     SubElement(channel, "description").text = s["rss_description"]
     SubElement(channel, "language").text    = lang
+    SubElement(channel, "lastBuildDate").text = formatdate()
     feed_path  = "/feed.xml" if lang == DEFAULT_LANG else f"/feed/{lang}.xml"
     atom_link  = SubElement(channel, "atom:link")
     atom_link.set("href", f"{base}{feed_path}")
@@ -508,6 +646,7 @@ def _build_rss(lang: str) -> str:
         SubElement(item, "link").text        = f"{base}/posts/{lang}/{post['slug']}"
         SubElement(item, "guid").text        = f"{base}/posts/{lang}/{post['slug']}"
         SubElement(item, "description").text = post.get("description", "")
+        SubElement(item, "content:encoded").text = post["content_html"]
         raw = post["date"]
         if hasattr(raw, "timetuple"):
             SubElement(item, "pubDate").text = formatdate(time.mktime(raw.timetuple()))
@@ -515,110 +654,139 @@ def _build_rss(lang: str) -> str:
     return '<?xml version="1.0" encoding="UTF-8"?>\n' + tostring(root, encoding="unicode")
 
 
-# ── Routes — default language (es) ───────────────────────────────────────────
+# ── Routes ─────────────────────────────────────────────────────────────────────
 
-@app.get("/")
-@app.get(f"/posts/{DEFAULT_LANG}/")
-def blog_index_default(req):
-    posts = get_all_posts(DEFAULT_LANG)
-    return page_shell("Blog", DEFAULT_LANG, "/",
-                      UI_STRINGS[DEFAULT_LANG]["subtitle"],
-                      *blog_index_content(posts, DEFAULT_LANG))
+def _register_lang_routes(lang: str):
+    "Register the full set of routes for one language — scales to N languages."
+    root = _lang_root(lang)
+    lang_alternates = {l: _lang_root(l) for l in SUPPORTED_LANGS}
 
+    @app.get(root, name=f"blog_index_{lang}")
+    @app.get(f"/posts/{lang}/", name=f"blog_posts_{lang}")
+    def blog_index(req, page: int = 1):
+        posts = get_all_posts(lang)
+        last_page = max(1, -(-len(posts) // POSTS_PER_PAGE))
+        if page < 1 or page > last_page:
+            return FtResponse(page_shell("404", lang, root, "",
+                              not_found_page(lang)), status_code=404)
+        return page_shell("Blog", lang, root, UI_STRINGS[lang]["subtitle"],
+                          *blog_index_content(posts, lang, page),
+                          alternates=lang_alternates)
 
-@app.get(f"/posts/{DEFAULT_LANG}/{{slug}}")
-def blog_post_default(req, slug: str):
-    post = get_post(slug, DEFAULT_LANG)
-    if not post:
-        return FtResponse(page_shell("404", DEFAULT_LANG, f"/posts/{DEFAULT_LANG}/{slug}", "",
-                          not_found_page(DEFAULT_LANG)), status_code=404)
-    return page_shell(post["title"], DEFAULT_LANG, f"/posts/{DEFAULT_LANG}/{slug}",
-                      post.get("description", ""), *post_page_content(post, DEFAULT_LANG))
+    @app.get(f"/posts/{lang}/{{slug}}", name=f"blog_post_{lang}")
+    def blog_post(req, slug: str):
+        post = get_post(slug, lang)
+        if not post:
+            return FtResponse(page_shell("404", lang, f"/posts/{lang}/{slug}", "",
+                              not_found_page(lang)), status_code=404)
+        alternates = {lang: f"/posts/{lang}/{slug}"}
+        for other_lang, other_slug in TRANSLATIONS.get((lang, slug), {}).items():
+            alternates[other_lang] = f"/posts/{other_lang}/{other_slug}"
+        return page_shell(post["title"], lang, f"/posts/{lang}/{slug}",
+                          post.get("description", ""),
+                          *post_page_content(post, lang), alternates=alternates)
 
+    @app.get(f"/pages/{lang}/{{page}}", name=f"static_page_{lang}")
+    def static_page(req, page: str):
+        if ".." in page or "/" in page:
+            return FtResponse(page_shell("404", lang, f"/pages/{lang}/{page}", "",
+                              not_found_page(lang)), status_code=404)
+        loaded = load_page(f"pages/{lang}/{page}.md")
+        if not loaded:
+            return FtResponse(page_shell("404", lang, f"/pages/{lang}/{page}", "",
+                              not_found_page(lang)), status_code=404)
+        title, html = loaded
+        return page_shell(title, lang, f"/pages/{lang}/{page}", "",
+                          Div(NotStr(html), cls="about-body"))
 
-@app.get(f"/pages/{DEFAULT_LANG}/about")
-def about_default(req):
-    html = load_page(f"pages/{DEFAULT_LANG}/about.md")
-    return page_shell("Sobre mí", DEFAULT_LANG, f"/pages/{DEFAULT_LANG}/about", "",
-                      Div(NotStr(html), cls="about-body"))
+    tags_path = "/tags/" if lang == DEFAULT_LANG else f"{root}tags/"
 
-
-# ── Routes — secondary language (en) ─────────────────────────────────────────
-
-@app.get(f"/{_secondary_lang}/")
-@app.get(f"/posts/{_secondary_lang}/")
-def blog_index_secondary(req):
-    posts = get_all_posts(_secondary_lang)
-    return page_shell("Blog", _secondary_lang, f"/{_secondary_lang}/",
-                      UI_STRINGS[_secondary_lang]["subtitle"],
-                      *blog_index_content(posts, _secondary_lang))
-
-
-@app.get(f"/posts/{_secondary_lang}/{{slug}}")
-def blog_post_secondary(req, slug: str):
-    post = get_post(slug, _secondary_lang)
-    if not post:
-        return FtResponse(page_shell("404", _secondary_lang, f"/posts/{_secondary_lang}/{slug}", "",
-                          not_found_page(_secondary_lang)), status_code=404)
-    return page_shell(post["title"], _secondary_lang, f"/posts/{_secondary_lang}/{slug}",
-                      post.get("description", ""), *post_page_content(post, _secondary_lang))
-
-
-@app.get(f"/pages/{_secondary_lang}/about")
-def about_secondary(req):
-    html = load_page(f"pages/{_secondary_lang}/about.md")
-    return page_shell("About", _secondary_lang, f"/pages/{_secondary_lang}/about", "",
-                      Div(NotStr(html), cls="about-body"))
-
-
-# ── Routes — Tags ─────────────────────────────────────────────────────────────
-
-@app.get("/tags/")
-def tags_index(req):
-    sorted_tags = sorted(TAG_INDEX.items(), key=lambda kv: len(kv[1]), reverse=True)
-    lang = DEFAULT_LANG
-    s    = UI_STRINGS[lang]
-    items = [
-        Li(
-            A(tag, href=f"/tags/{tag}", cls="tag"),
-            Span(f" ({len(posts)})", cls="tag-count"),
+    @app.get(tags_path, name=f"tags_index_{lang}")
+    def tags_index(req):
+        s = UI_STRINGS[lang]
+        sorted_tags = sorted(TAG_INDEX.items(), key=lambda kv: len(kv[1]), reverse=True)
+        items = [
+            Li(
+                A(tag, href=f"{tags_path}{TAG_SLUGS[tag]}", cls="tag"),
+                Span(f" ({len(posts)})", cls="tag-count"),
+            )
+            for tag, posts in sorted_tags
+        ]
+        return page_shell(s["all_tags"], lang, tags_path, "",
+            Div(H1(s["all_tags"]), Ul(*items, cls="tag-cloud"), cls="tags-page")
         )
-        for tag, posts in sorted_tags
-    ]
-    return page_shell(s["all_tags"], lang, "/tags/", "",
-        Div(H1(s["all_tags"]), Ul(*items, cls="tag-cloud"), cls="tags-page")
-    )
+
+    @app.get(f"{tags_path}{{tag_slug}}", name=f"tag_view_{lang}")
+    def tag_view(req, tag_slug: str):
+        s = UI_STRINGS[lang]
+        if tag_slug not in SLUG_TAGS:
+            return FtResponse(page_shell("404", lang, f"{tags_path}{tag_slug}", "",
+                              not_found_page(lang)), status_code=404)
+        tag = SLUG_TAGS[tag_slug]
+        posts = TAG_INDEX.get(tag, [])
+        sections: list = []
+        for l in SUPPORTED_LANGS:
+            lang_posts = [p for p in posts if p["lang"] == l]
+            if lang_posts:
+                sections.append(H2(l.upper()))
+                sections.extend([post_card(p, l) for p in lang_posts])
+        content = Div(
+            H1(f"{s['tag_posts']} #{tag}"),
+            Div(*sections, cls="post-list") if sections else P(s["no_posts"], cls="post-meta"),
+            cls="tags-page",
+        )
+        return page_shell(f"#{tag}", lang, f"{tags_path}{tag_slug}", "", content)
 
 
-@app.get("/tags/{tag}")
-def tag_view(req, tag: str):
-    posts = TAG_INDEX.get(tag, [])
-    lang  = DEFAULT_LANG
-    s     = UI_STRINGS[lang]
-    sections: list = []
-    for l in SUPPORTED_LANGS:
-        lang_posts = [p for p in posts if p["lang"] == l]
-        if lang_posts:
-            sections.append(H2(l.upper()))
-            sections.extend([post_card(p, l) for p in lang_posts])
-    content = Div(
-        H1(f"{s['tag_posts']} #{tag}"),
-        Div(*sections, cls="post-list") if sections else P(s["no_posts"], cls="post-meta"),
-        cls="tags-page",
-    )
-    return page_shell(f"#{tag}", lang, f"/tags/{tag}", "", content)
+for _route_lang in SUPPORTED_LANGS:
+    _register_lang_routes(_route_lang)
 
 
-# ── Routes — RSS ──────────────────────────────────────────────────────────────
+# ── Feeds ─────────────────────────────────────────────────────────────────────
 
-@app.get("/feed.xml")
-def rss_default(req):
-    return Response(_build_rss(DEFAULT_LANG), media_type="application/rss+xml; charset=utf-8")
+def _register_feed_routes(lang: str):
+    @app.get(f"/feed/{lang}.xml", name=f"rss_{lang}")
+    def rss_lang(req):
+        return Response(_build_rss(lang), media_type="application/rss+xml; charset=utf-8")
+    if lang == DEFAULT_LANG:
+        @app.get("/feed.xml", name="rss_default")
+        def rss_default(req):
+            return Response(_build_rss(lang), media_type="application/rss+xml; charset=utf-8")
 
 
-@app.get(f"/feed/{_secondary_lang}.xml")
-def rss_secondary(req):
-    return Response(_build_rss(_secondary_lang), media_type="application/rss+xml; charset=utf-8")
+for _feed_lang in SUPPORTED_LANGS:
+    _register_feed_routes(_feed_lang)
+
+
+# ── SEO: sitemap & robots ──────────────────────────────────────────────────────
+
+@app.get("/sitemap.xml")
+def sitemap(req):
+    urlset = Element("urlset")
+    urlset.set("xmlns", "http://www.sitemaps.org/schemas/sitemap/0.9")
+
+    def add(loc: str, lastmod=None):
+        u = SubElement(urlset, "url")
+        SubElement(u, "loc").text = f"{SITE_URL}{loc}"
+        if lastmod is not None:
+            SubElement(u, "lastmod").text = lastmod.isoformat()
+
+    for lang in SUPPORTED_LANGS:
+        add(_lang_root(lang))
+        for stem in PAGES_INDEX[lang]:
+            add(f"/pages/{lang}/{stem}")
+        for post in get_all_posts(lang):
+            add(f"/posts/{lang}/{post['slug']}", post["date"])
+
+    return Response('<?xml version="1.0" encoding="UTF-8"?>\n'
+                    + tostring(urlset, encoding="unicode"),
+                    media_type="application/xml; charset=utf-8")
+
+
+@app.get("/robots.txt")
+def robots(req):
+    return Response(f"User-agent: *\nAllow: /\nSitemap: {SITE_URL}/sitemap.xml\n",
+                    media_type="text/plain; charset=utf-8")
 
 
 # ── Static files ──────────────────────────────────────────────────────────────
@@ -628,13 +796,17 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # ── Catch-all 404 ──────────────────────────────────────────────────────────────
 
-_REDIRECTABLE = {"tags"} | set(SUPPORTED_LANGS) | {f"posts/{l}" for l in SUPPORTED_LANGS}
+_REDIRECTABLE = (
+    {"tags"} | set(SUPPORTED_LANGS)
+    | {f"posts/{l}" for l in SUPPORTED_LANGS}
+    | {f"{l}/tags" for l in SUPPORTED_LANGS if l != DEFAULT_LANG}
+)
 
 @app.get("/{path:path}")
 def not_found_catchall(req, path: str):
     if path in _REDIRECTABLE:
         return Redirect(f"/{path}/")
-    lang = _secondary_lang if path.startswith(_secondary_lang + "/") else DEFAULT_LANG
+    lang = _detect_lang(f"/{path}")
     return FtResponse(page_shell("404", lang, f"/{path}", "", not_found_page(lang)),
                       status_code=404)
 
@@ -642,5 +814,5 @@ def not_found_catchall(req, path: str):
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    dev = os.environ.get("RAILWAY_ENVIRONMENT") is None
-    serve(port=PORT, reload=dev)
+    dev = os.environ.get("ENV", "development") != "production"
+    serve(port=PORT, reload=dev, reload_includes=["*.md"] if dev else None)

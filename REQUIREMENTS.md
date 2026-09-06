@@ -9,14 +9,24 @@ Stack: **FastHTML** · **Mistune** · **Pygments** · **PicoCSS** · **Uvicorn**
 
 ```bash
 # Install deps (uv recommended)
-uv venv && uv pip install -r requirements.txt
+uv sync --group dev
 
 # Start dev server (auto-reload)
 uv run python main.py
 # → http://localhost:8000
 ```
 
-Default lang (ES) is at `/`, secondary lang (EN) at `/en/`.
+Set `ENV=production` to run without auto-reload. Default lang (ES) is at `/`, secondary lang (EN) at `/en/`.
+
+## Tests
+
+```bash
+uv run pytest -q          # full suite (routes, feeds, security headers, traversal, pagination)
+uv run python -m pyflakes main.py config.py   # ignore "...defined from star imports" lines —
+                                              # they're noise from `from fasthtml.common import *`
+```
+
+The suite includes raw-ASGI path-traversal regression tests that bypass HTTP client URL normalization. CI runs both on every push/PR (`.github/workflows/ci.yml`).
 
 ---
 
@@ -26,8 +36,14 @@ Default lang (ES) is at `/`, secondary lang (EN) at `/en/`.
 pypost/
 ├── main.py           # App: post loading, components, routes
 ├── config.py         # Site identity, languages, nav, UI strings
+├── tests/
+│   └── test_app.py   # Pytest suite (Starlette TestClient)
+├── .github/workflows/ci.yml
 ├── static/
 │   ├── custom.css    # Theme (edit CSS variables to restyle)
+│   ├── vendor/       # Vendored PicoCSS (self-hosted, no CDN)
+│   ├── fonts/        # Self-hosted Inter + JetBrains Mono (woff2)
+│   ├── favicon.svg
 │   └── pygments.css  # Auto-generated on startup — do not edit
 ├── posts/
 │   ├── en/           # English posts (*.md)
@@ -36,6 +52,7 @@ pypost/
 │   ├── en/about.md
 │   └── es/about.md
 ├── pyproject.toml
+├── uv.lock
 ├── requirements.txt
 └── Procfile          # Railway deployment
 ```
@@ -79,23 +96,24 @@ Your content here...
 | `series_part` | int | `null` | Order within the series |
 | `toc` | bool | `true` | Show ToC when ≥3 headings |
 
+### Markdown content
+
+Raw HTML in post/page Markdown is **escaped by design** (Mistune runs with `escape=True`). If you need an embed (e.g. a YouTube iframe), render it as a link instead — or change the renderer consciously, knowing it opts into author-controlled HTML.
+
+### Assets
+
+All frontend assets are self-hosted — no CDN requests leave the site:
+
+- `static/vendor/pico.classless.min.css` — PicoCSS v2 (MIT), vendored as-is
+- `static/fonts/` — Inter and JetBrains Mono (latin subsets, variable), referenced by `@font-face` rules in `static/custom.css`
+
 ---
 
 ## Adding a static page
 
-1. Create `pages/{lang}/mypage.md`
+1. Create `pages/{lang}/mypage.md` — it is automatically served at `/pages/{lang}/mypage`. No route registration needed.
 
-2. Add a route in `main.py`:
-
-```python
-@app.get("/pages/en/mypage")
-def mypage_en(req):
-    html = load_page("pages/en/mypage.md")
-    return page_shell("My Page", "en", "/pages/en/mypage", "",
-                      Div(NotStr(html), cls="about-body"))
-```
-
-3. Add it to `NAV_LINKS` in `config.py`:
+2. Optionally add it to `NAV_LINKS` in `config.py`:
 
 ```python
 NAV_LINKS = {
@@ -116,11 +134,15 @@ Edit `config.py`:
 | `SITE_DESCRIPTION` | Default meta description |
 | `AUTHOR` | Default post author |
 | `PORT` | Dev port (overridden by `$PORT` in production) |
-| `SITE_URL` | Canonical URL used in og tags and RSS links (set the `SITE_URL` env var in production; defaults to `http://localhost:$PORT`) |
+| `SITE_URL` | Canonical URL used in og tags, RSS, sitemap and hreflang (set the `SITE_URL` env var in production; defaults to `http://localhost:$PORT`) |
+| `SITE_IMAGE` | Absolute URL of a social-share image, used for `og:image` / `twitter:image` (optional, via `SITE_IMAGE` env var) |
 | `DEFAULT_LANG` | Language served at `/` |
 | `SUPPORTED_LANGS` | Both languages, e.g. `["es", "en"]` |
 | `NAV_LINKS` | Per-language nav items |
 | `UI_STRINGS` | All button labels, messages, RSS strings |
+| `POSTS_PER_PAGE` | Posts per index page (via `POSTS_PER_PAGE` env var, default 10) |
+
+Adding a third language: add its code to `SUPPORTED_LANGS`, create `posts/{lang}/` and `pages/{lang}/` directories, and add its nav links and `UI_STRINGS` entries. Routes are generated automatically.
 
 ---
 
@@ -164,8 +186,20 @@ Series work across languages — part 1 can be in ES and part 2 in EN.
 Any value in a post's `tags` list creates:
 
 - A tag badge on the post card and post page
-- An entry on `/tags/`
-- A filtered list page at `/tags/{tag}`
+- An entry on `/tags/` (localized: `/en/tags/`)
+- A filtered list page at `/tags/{slug}` — tags keep their original text but get URL-safe slugs (e.g. `#ciencia de datos` → `/tags/ciencia-de-datos`). Slugs are shared across languages, so tag pages exist in both even if the tag text only appears in one.
+
+## Pagination
+
+The blog index shows `POSTS_PER_PAGE` posts per page (default 10); older posts are paginated at `/?page=2` (and `/en/?page=2`). The nav is hidden when everything fits on one page.
+
+## SEO
+
+- `/sitemap.xml` — all index, page and post URLs with `lastmod`, with hreflang alternates per entry
+- `/robots.txt` — points crawlers at the sitemap
+- `hreflang` `<link>` alternates + `x-default` on every page, per-language RSS autodiscovery links
+- Open Graph + Twitter card tags (`og:image` / `twitter:image` only if `SITE_IMAGE` is set)
+- Correct `<html lang>` per language, real 404 status codes on missing content
 
 ---
 
@@ -182,7 +216,7 @@ Set `toc: false` in frontmatter to disable for a specific post.
 - Default lang feed: `/feed.xml`
 - Secondary lang feed: `/feed/{lang}.xml` (e.g. `/feed/en.xml`)
 
-Feeds include the 20 most recent posts. Autodiscovery `<link>` tags are injected into every page.
+Feeds include the 20 most recent posts, with full HTML content (`content:encoded`) per item. Autodiscovery `<link>` tags are injected into every page.
 
 ---
 
@@ -191,6 +225,8 @@ Feeds include the 20 most recent posts. Autodiscovery `<link>` tags are injected
 1. Push the repo to GitHub
 2. Create a new Railway project from the repo
 3. Railway detects the `Procfile` and sets `$PORT` automatically
-4. Set a `SITE_URL` environment variable to your production URL (used for og tags and RSS links). No other environment variables needed — `PORT` is set by Railway.
+4. Set environment variables in Railway:
+   - `SITE_URL` — your production URL (used for og tags, RSS, sitemap and hreflang)
+   - `ENV=production` — disables dev auto-reload when running via `python main.py` (the `Procfile` runs uvicorn directly and never reloads, so this is optional there)
 
 The `static/pygments.css` file is gitignored and regenerated at startup.
