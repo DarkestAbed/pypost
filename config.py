@@ -13,6 +13,11 @@ DEFAULT_LANG    = "es"          # serves at /  (other langs at /{lang}/)
 SUPPORTED_LANGS = ["es", "en"]
 POSTS_PER_PAGE  = int(os.environ.get("POSTS_PER_PAGE", 10))
 
+# ── Feeds & code highlighting ─────────────────────────────────────────────────
+RSS_ITEMS            = 20          # posts per RSS feed
+PYGMENTS_STYLE_DARK  = "monokai"   # code theme in dark mode
+PYGMENTS_STYLE_LIGHT = "friendly"  # code theme in light mode
+
 # ── Navigation links per language ─────────────────────────────────────────────
 NAV_LINKS = {
     "es": [("Blog", "/"), ("Temas", "/tags/"), ("Sobre mí", "/pages/es/about")],

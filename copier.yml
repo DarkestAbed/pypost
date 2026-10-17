@@ -1,0 +1,100 @@
+# pypost blog template — https://copier.readthedocs.io
+# Generate:  uvx copier copy --trust gh:GH-USER/pypost my-blog
+# Update:    uvx copier update --trust            (inside a generated blog)
+
+_min_copier_version: "9.4.0"
+
+# ── Questions ─────────────────────────────────────────────────────────────────
+site_name:
+  type: str
+  help: Name of your blog (title tags, nav, footer)
+  default: My pypost blog
+
+author:
+  type: str
+  help: Your name — used for the license, RSS, and the default post author
+  validator: "{% if not (author | trim) %}Author is required{% endif %}"
+
+site_description:
+  type: str
+  help: One-line description (meta tags, RSS, about page)
+  default: A blog built with pypost.
+
+site_url:
+  type: str
+  help: Production URL (e.g. https://my.blog) — leave blank to set later via the SITE_URL env var
+  default: ""
+
+languages:
+  type: str
+  multiselect: true
+  help: Languages your blog will serve
+  choices:
+    Español: es
+    English: en
+  default: [es, en]
+  validator: "{% if not languages %}Pick at least one language{% endif %}"
+
+default_lang:
+  type: str
+  help: Language served at /
+  choices: "{{ languages }}"
+  default: "{% if languages %}{{ languages[0] }}{% else %}es{% endif %}"
+
+include_demo_content:
+  type: bool
+  help: Include the demo posts (welcome + features demo) as a starting point
+  default: true
+
+license:
+  type: str
+  help: License for your blog's content and config (engine code stays AGPL regardless)
+  choices:
+    AGPL-3.0-or-later: agpl
+    MIT: mit
+    None: none
+  default: agpl
+
+# ── Never copied into generated projects ──────────────────────────────────────
+_exclude:
+  # copier defaults — re-declared because _exclude replaces the default list
+  - "copier.yml"
+  - "~*"
+  - "*.py[co]"
+  - "__pycache__"
+  - ".git"
+  - ".DS_Store"
+  - ".svn"
+  # template-repo tooling & internal docs
+  - "/new.sh"
+  - "/docs"
+  - |
+    {% if "es" not in languages %}
+    /posts/es
+    /pages/es
+    {% endif %}
+  - |
+    {% if "en" not in languages %}
+    /posts/en
+    /pages/en
+    {% endif %}
+  - |
+    {% if not include_demo_content %}
+    /posts/**/*.md
+    {% endif %}
+
+# ── After generating (skipped on `copier update`) ─────────────────────────────
+_tasks:
+  - command: git init -q -b main
+    when: "{{ _copier_operation == 'copy' }}"
+  - command: git add -A
+    when: "{{ _copier_operation == 'copy' }}"
+  - command: |
+      sh -c 'git commit -qm "Start {{ site_name }} (generated with pypost)" \
+        || git -c user.name="{{ author }}" -c user.email="noreply@pypost.local" \
+             commit -qm "Start {{ site_name }} (generated with pypost)"'
+    when: "{{ _copier_operation == 'copy' }}"
+  - command: >-
+      sh -c 'if command -v uv >/dev/null 2>&1; then uv sync --group dev;
+      else echo "uv not found — install it, then run: uv sync --group dev"; fi'
+    when: "{{ _copier_operation == 'copy' }}"

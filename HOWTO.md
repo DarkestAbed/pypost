@@ -1,8 +1,9 @@
 # pypost — How to use this template
 
-This is a guide for turning this repo into **your** blog. For reference-style
-documentation (every frontmatter field, every config variable), see
-[`REQUIREMENTS.md`](REQUIREMENTS.md).
+This is a guide for making **your** blog with pypost. Generate a blog with
+`uvx copier copy --trust <pypost repo> my-blog` (see the README), or work
+directly in a clone of this repo. For reference-style documentation (every
+frontmatter field, every config variable), see [`REQUIREMENTS.md`](REQUIREMENTS.md).
 
 ---
 
@@ -138,7 +139,8 @@ frequently-touched pieces:
 | Site name, description, author | `SITE_NAME`, `SITE_DESCRIPTION`, `AUTHOR` |
 | Nav menu | `NAV_LINKS` (per language) |
 | Button/label text ("Read →", "min read", …) | `UI_STRINGS` (per language) |
-| Posts per index page | `POSTS_PER_PAGE` (or env var) |
+| Posts per index page / RSS feed | `POSTS_PER_PAGE` (or env var) / `RSS_ITEMS` |
+| Code highlight themes | `PYGMENTS_STYLE_DARK`, `PYGMENTS_STYLE_LIGHT` |
 
 ### Adding a language
 
@@ -179,11 +181,11 @@ rules at the top of `static/custom.css`. To swap them:
 ### Syntax highlighting style
 
 `static/pygments.css` is **generated at startup** — don't edit it. The styles
-come from two Pygments themes set in `main.py`:
+come from two config variables:
 
 ```python
-_dark_css  = HtmlFormatter(style="monokai",  ...)
-_light_css = HtmlFormatter(style="friendly", ...)
+PYGMENTS_STYLE_DARK  = "monokai"   # code theme in dark mode
+PYGMENTS_STYLE_LIGHT = "friendly"  # code theme in light mode
 ```
 
 Pick any style from
@@ -218,8 +220,25 @@ uv run python -m pyflakes main.py config.py
 ```
 
 The suite includes path-traversal regression tests against the original
-security bug — run it before deploys. CI (`.github/workflows/ci.yml`) runs both
+security bug — run it before deploys. The suite is **config-driven**: it reads
+`config.py` and the content indexes, so it stays green for any combination of
+languages and content. CI (`.github/workflows/ci.yml`) runs both
 on every push and pull request.
+
+## Updating from the template
+
+If your blog was generated with Copier (`uvx copier copy`), it remembers its
+answers in `.copier-answers.yml`. To pull in upstream fixes and features:
+
+```bash
+uvx copier update --trust
+```
+
+Copier replays the new template version against your saved answers and merges
+the result. Your `config.py`, `posts/`, `pages/`, and `static/custom.css` are
+preserved; if an upstream change touches a line you also edited (typically in
+`main.py` or `tests/`), you get standard conflict markers to resolve by hand.
+Keep engine edits small and updates stay painless.
 
 ## Deploying
 

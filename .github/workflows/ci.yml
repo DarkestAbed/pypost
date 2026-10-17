@@ -30,3 +30,27 @@ jobs:
 
       - name: Pytest
         run: uv run pytest -q
+
+  template-instances:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+
+      - name: Generate default instance
+        run: uvx copier copy --trust --defaults -d 'author=CI Bot' . /tmp/blog-default
+
+      - name: Generate minimal instance (EN only, no demo content, MIT)
+        run: >-
+          uvx copier copy --trust --defaults -d 'author=CI Bot' -d 'languages=[en]'
+          -d 'default_lang=en' -d 'include_demo_content=false' -d 'license=mit' . /tmp/blog-min
+
+      - name: Test default instance
+        run: cd /tmp/blog-default && uv sync --group dev && uv run pytest -q
+
+      - name: Test minimal instance
+        run: cd /tmp/blog-min && uv sync --group dev && uv run pytest -q

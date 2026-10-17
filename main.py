@@ -19,7 +19,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from fasthtml.common import *
 
 from config import (
-    SITE_NAME, SITE_URL, SITE_IMAGE, AUTHOR, PORT, POSTS_PER_PAGE,
+    SITE_NAME, SITE_URL, SITE_IMAGE, AUTHOR, PORT, POSTS_PER_PAGE, RSS_ITEMS,
+    PYGMENTS_STYLE_DARK, PYGMENTS_STYLE_LIGHT,
     DEFAULT_LANG, SUPPORTED_LANGS, NAV_LINKS, UI_STRINGS,
 )
 
@@ -64,8 +65,8 @@ def render_md(text: str) -> str:
 
 # ── Pygments CSS (generated once at startup) ──────────────────────────────────
 
-_dark_css  = HtmlFormatter(style="monokai",  cssclass="highlight").get_style_defs(".highlight")
-_light_css = HtmlFormatter(style="friendly", cssclass="highlight").get_style_defs(".highlight")
+_dark_css  = HtmlFormatter(style=PYGMENTS_STYLE_DARK,  cssclass="highlight").get_style_defs(".highlight")
+_light_css = HtmlFormatter(style=PYGMENTS_STYLE_LIGHT, cssclass="highlight").get_style_defs(".highlight")
 
 PYGMENTS_CSS = (
     f"[data-theme='dark'] .highlight {{ background: var(--code-bg); }}\n"
@@ -640,7 +641,7 @@ def _build_rss(lang: str) -> str:
     atom_link.set("rel",  "self")
     atom_link.set("type", "application/rss+xml")
 
-    for post in get_all_posts(lang)[:20]:
+    for post in get_all_posts(lang)[:RSS_ITEMS]:
         item = SubElement(channel, "item")
         SubElement(item, "title").text       = post["title"]
         SubElement(item, "link").text        = f"{base}/posts/{lang}/{post['slug']}"

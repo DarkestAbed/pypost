@@ -12,6 +12,29 @@ uv run python main.py
 # → http://localhost:8000  (ES) · /en/  (EN)
 ```
 
+## Start your own blog
+
+pypost is a [Copier](https://copier.readthedocs.io) template — no forking, no
+find-and-replace:
+
+```bash
+uvx copier copy --trust gh:GH-USER/pypost my-blog
+cd my-blog
+```
+
+You'll be asked for your site name, author, languages (ES/EN, either or both),
+production URL, demo content, and license. A ready-to-run repo comes out the
+other end — git initialized, dependencies synced, tests passing. Prefer a
+one-liner?
+
+```bash
+curl -sSL https://raw.githubusercontent.com/GH-USER/pypost/main/new.sh | sh -s my-blog
+```
+
+**Stay current:** as pypost gets fixes and features, run
+`uvx copier update --trust` inside your blog to re-apply the template as a diff
+on top of your saved answers. Your `config.py`, content, and styles stay yours.
+
 ## Features
 
 - **Bilingual by design** — ES at `/`, EN at `/en/`, one nav toggle between
@@ -49,6 +72,18 @@ static/            Self-hosted CSS, fonts, favicon (no CDN)
 tests/test_app.py  Route, feed, header, and security regression tests
 Procfile           Railway deployment
 ```
+
+### Template files
+
+This repo doubles as the Copier template source. Convention:
+
+- `*.jinja` files are rendered at generation time from the answers in
+  `copier.yml` (`config.py.jinja` → the instance's `config.py`, and so on)
+- A plain file sitting next to its `.jinja` sibling (`README.md`, `LICENSE`,
+  `.gitignore`, `ci.yml`, …) belongs to this repo itself and is skipped during
+  generation
+- Files wrapped in conditional names (`{% if license == 'agpl' %}LICENSE{% endif %}`)
+  are emitted only for the matching answers
 
 ## Deploy
 

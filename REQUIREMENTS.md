@@ -3,6 +3,10 @@
 A minimal, bilingual blog framework. No build step, no database.
 Stack: **FastHTML** · **Mistune** · **Pygments** · **PicoCSS** · **Uvicorn**
 
+> **Generated blog?** This project came from the pypost Copier template; your
+> answers live in `.copier-answers.yml`. Run `uvx copier update --trust` to pull
+> upstream engine updates — your config, content, and styles are preserved.
+
 ---
 
 ## Running locally
@@ -141,6 +145,8 @@ Edit `config.py`:
 | `NAV_LINKS` | Per-language nav items |
 | `UI_STRINGS` | All button labels, messages, RSS strings |
 | `POSTS_PER_PAGE` | Posts per index page (via `POSTS_PER_PAGE` env var, default 10) |
+| `RSS_ITEMS` | Posts included in each RSS feed (default 20) |
+| `PYGMENTS_STYLE_DARK` / `PYGMENTS_STYLE_LIGHT` | Pygments styles for code highlighting per theme (defaults `monokai` / `friendly`) |
 
 Adding a third language: add its code to `SUPPORTED_LANGS`, create `posts/{lang}/` and `pages/{lang}/` directories, and add its nav links and `UI_STRINGS` entries. Routes are generated automatically.
 
@@ -162,11 +168,11 @@ Key variables:
 | `--text-muted` | Dates, meta, muted text |
 | `--code-bg` | Inline and block code background |
 
-The `pygments.css` file (syntax highlighting) is auto-generated from Pygments styles on startup. To change highlight styles, edit these lines in `main.py`:
+The `pygments.css` file (syntax highlighting) is auto-generated from Pygments styles on startup. Change the styles in `config.py`:
 
 ```python
-_dark_css  = HtmlFormatter(style="monokai",  ...).get_style_defs(...)
-_light_css = HtmlFormatter(style="friendly", ...).get_style_defs(...)
+PYGMENTS_STYLE_DARK  = "monokai"
+PYGMENTS_STYLE_LIGHT = "friendly"
 ```
 
 Run `python -c "from pygments.styles import get_all_styles; print(list(get_all_styles()))"` to list available styles.
@@ -216,7 +222,7 @@ Set `toc: false` in frontmatter to disable for a specific post.
 - Default lang feed: `/feed.xml`
 - Secondary lang feed: `/feed/{lang}.xml` (e.g. `/feed/en.xml`)
 
-Feeds include the 20 most recent posts, with full HTML content (`content:encoded`) per item. Autodiscovery `<link>` tags are injected into every page.
+Feeds include the `RSS_ITEMS` most recent posts (default 20), with full HTML content (`content:encoded`) per item. Autodiscovery `<link>` tags are injected into every page.
 
 ---
 

@@ -1,0 +1,85 @@
+import os
+
+# ── Site identity ─────────────────────────────────────────────────────────────
+SITE_NAME        = {{ site_name | tojson }}
+SITE_DESCRIPTION = {{ site_description | tojson }}
+AUTHOR           = {{ author | tojson }}
+PORT             = int(os.environ.get("PORT", 8000))
+{%- if site_url %}
+SITE_URL         = os.environ.get("SITE_URL", {{ site_url | tojson }})
+{%- else %}
+SITE_URL         = os.environ.get("SITE_URL", f"http://localhost:{PORT}")
+{%- endif %}
+SITE_IMAGE       = os.environ.get("SITE_IMAGE", "")  # absolute URL for og:image / twitter:image (optional)
+
+# ── Language ──────────────────────────────────────────────────────────────────
+DEFAULT_LANG    = {{ default_lang | tojson }}  # serves at /  (other langs at /{lang}/)
+SUPPORTED_LANGS = {{ languages | tojson }}
+POSTS_PER_PAGE  = int(os.environ.get("POSTS_PER_PAGE", 10))
+
+# ── Feeds & code highlighting ─────────────────────────────────────────────────
+RSS_ITEMS            = 20          # posts per RSS feed
+PYGMENTS_STYLE_DARK  = "monokai"   # code theme in dark mode
+PYGMENTS_STYLE_LIGHT = "friendly"  # code theme in light mode
+
+# ── Navigation links per language ─────────────────────────────────────────────
+NAV_LINKS = {
+{%- if "es" in languages %}
+    "es": [("Blog", {{ ("/" if default_lang == "es" else "/es/") | tojson }}), ("Temas", {{ ("/tags/" if default_lang == "es" else "/es/tags/") | tojson }}), ("Sobre mí", "/pages/es/about")],
+{%- endif %}
+{%- if "en" in languages %}
+    "en": [("Blog", {{ ("/" if default_lang == "en" else "/en/") | tojson }}), ("Topics", {{ ("/tags/" if default_lang == "en" else "/en/tags/") | tojson }}), ("About", "/pages/en/about")],
+{%- endif %}
+}
+
+# ── UI strings ────────────────────────────────────────────────────────────────
+UI_STRINGS = {
+{%- if "es" in languages %}
+    "es": {
+        "read_more":      "Leer →",
+        "back_to_blog":   "← Volver",
+        "toggle_theme":   "☀ / ☾",
+        "switch_lang":    "English",
+        "not_found":      "Página no encontrada.",
+        "not_found_detail": "Este artículo no existe o fue movido.",
+        "reading_time":   "min de lectura",
+        "all_tags":       "Todos los temas",
+        "no_posts":       "Sin publicaciones aún.",
+        "series_prev":    "← Anterior",
+        "series_next":    "Siguiente →",
+        "series_part":    "Parte",
+        "toc_label":      "En este artículo",
+        "tag_posts":      "Artículos sobre",
+        "subtitle":       "Publicaciones recientes.",
+        "newer_posts":    "← Recientes",
+        "older_posts":    "Anteriores →",
+        "footer":         SITE_NAME,
+        "rss_title":      f"{SITE_NAME} — Blog",
+        "rss_description": SITE_DESCRIPTION,
+    },
+{%- endif %}
+{%- if "en" in languages %}
+    "en": {
+        "read_more":      "Read →",
+        "back_to_blog":   "← Back",
+        "toggle_theme":   "☀ / ☾",
+        "switch_lang":    "Español",
+        "not_found":      "Page not found.",
+        "not_found_detail": "This post does not exist or was moved.",
+        "reading_time":   "min read",
+        "all_tags":       "All topics",
+        "no_posts":       "No posts yet.",
+        "series_prev":    "← Previous",
+        "series_next":    "Next →",
+        "series_part":    "Part",
+        "toc_label":      "In this article",
+        "tag_posts":      "Posts tagged",
+        "subtitle":       "Recent posts.",
+        "newer_posts":    "← Newer",
+        "older_posts":    "Older →",
+        "footer":         SITE_NAME,
+        "rss_title":      f"{SITE_NAME} — Blog",
+        "rss_description": SITE_DESCRIPTION,
+    },
+{%- endif %}
+}
