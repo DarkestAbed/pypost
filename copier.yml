@@ -1,8 +1,10 @@
 # pypost blog template — https://copier.readthedocs.io
-# Generate:  uvx copier copy --trust gh:GH-USER/pypost my-blog
+# Generate:  uvx copier copy --trust gh:darkestabed/pypost my-blog
 # Update:    uvx copier update --trust            (inside a generated blog)
 
 _min_copier_version: "9.4.0"
+
+_subdirectory: template
 
 # ── Questions ─────────────────────────────────────────────────────────────────
 site_name:
@@ -65,9 +67,6 @@ _exclude:
   - ".git"
   - ".DS_Store"
   - ".svn"
-  # template-repo tooling & internal docs
-  - "/new.sh"
-  - "/docs"
   - |
     {% if "es" not in languages %}
     /posts/es
@@ -82,6 +81,12 @@ _exclude:
     {% if not include_demo_content %}
     /posts/**/*.md
     {% endif %}
+
+# ── Instance-owned files: written once, never touched by `copier update` ──────
+# theme.css holds the site's colors and fonts — the file users edit. custom.css
+# (layout) stays template-owned so engine updates merge cleanly.
+_skip_if_exists:
+  - "static/theme.css"
 
 # ── After generating (skipped on `copier update`) ─────────────────────────────
 _tasks:

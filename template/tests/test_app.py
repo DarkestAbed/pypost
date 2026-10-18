@@ -164,7 +164,8 @@ def test_robots_txt():
 # ── Static files & security ────────────────────────────────────────────────────
 
 def test_static_assets():
-    for f in ("/static/custom.css", "/static/vendor/pico.classless.min.css",
+    for f in ("/static/custom.css", "/static/theme.css",
+              "/static/vendor/pico.classless.min.css",
               "/static/fonts/inter-var.woff2", "/static/favicon.svg",
               "/static/pygments.css"):
         assert client.get(f).status_code == 200

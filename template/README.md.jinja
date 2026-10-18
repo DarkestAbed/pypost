@@ -2,7 +2,7 @@
 
 {{ site_description }}
 
-Built with [pypost](https://github.com/GH-USER/pypost) — a minimal
+Built with [pypost](https://github.com/darkestabed/pypost) — a minimal
 {%- if languages | length > 1 %} multilingual{% endif %} blog engine:
 Markdown in, site out. No build step, no database.
 
@@ -23,8 +23,8 @@ Locally:
 - **New post** — `posts/{{ default_lang }}/YYYYMMDD-my-slug.md` with frontmatter
   (see [REQUIREMENTS.md](REQUIREMENTS.md))
 - **New static page** — drop a `.md` into `pages/{{ default_lang }}/`, route included
-- **Customize** — everything user-facing lives in `config.py` and
-  `static/custom.css` (see [HOWTO.md](HOWTO.md))
+- **Customize** — everything user-facing lives in `config.py`; your look lives
+  in `static/theme.css` (see [HOWTO.md](HOWTO.md))
 
 ## Update the engine
 

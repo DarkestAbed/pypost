@@ -50,7 +50,7 @@ ENV=production uv run python main.py
 
 3. **Restrain the nav** — `NAV_LINKS` in `config.py` controls the header menu
    per language. Remove the "About" links if you don't want static pages.
-4. **Recolor it** — edit the CSS variables in `static/custom.css` (see
+4. **Recolor it** — edit the CSS variables in `static/theme.css` (see
    [Theme and colors](#theme-and-colors) below).
 
 That's a complete, working personal blog.
@@ -156,27 +156,30 @@ list order — with two languages it's a toggle; with three, ES → FR → EN �
 
 ### Theme and colors
 
-All colors are CSS variables at the top of `static/custom.css`, with a dark
-block and a light block:
+All colors and fonts are CSS variables in `static/theme.css` — **yours to
+edit** (it's written once at generation and `copier update` never overwrites
+it). The dark and light palettes:
 
 ```css
 :root, [data-theme="dark"] { --bg: #0d0f12; --accent: #4da8fa; ... }
 [data-theme="light"]       { --bg: #f6f7f9; --accent: #0b6ab3; ... }
 ```
 
-Change the variables — never touch the layout rules — and the whole site
-re-skins. The theme toggle in the nav stores a cookie server-side, so there's
-no flash on reload.
+Change the variables and the whole site re-skins, because `static/custom.css`
+(the layout, template-owned) only references variables — never touch it. The
+theme toggle in the nav stores a cookie server-side, so there's no flash on
+reload.
 
 ### Fonts
 
 Fonts are self-hosted woff2 files in `static/fonts/`, wired up by `@font-face`
-rules at the top of `static/custom.css`. To swap them:
+rules at the top of `static/theme.css`. To swap them:
 
 1. Put your woff2 in `static/fonts/`
 2. Update the `src: url(...)` paths and `font-weight` ranges in those
    `@font-face` blocks
-3. Update the `font-family` stacks on `body` and `pre, code`
+3. Point `--font-body` / `--font-mono` (same file, `:root` block) at them — the
+   layout picks the variables up everywhere
 
 ### Syntax highlighting style
 
@@ -235,9 +238,10 @@ uvx copier update --trust
 ```
 
 Copier replays the new template version against your saved answers and merges
-the result. Your `config.py`, `posts/`, `pages/`, and `static/custom.css` are
-preserved; if an upstream change touches a line you also edited (typically in
-`main.py` or `tests/`), you get standard conflict markers to resolve by hand.
+the result. Your `config.py`, `posts/`, `pages/`, and `static/theme.css` are
+preserved (`theme.css` is skip-if-exists, so it's never even offered); if an
+upstream change touches a line you also edited (typically in `main.py` or
+`tests/`), you get standard conflict markers to resolve by hand.
 Keep engine edits small and updates stay painless.
 
 ## Deploying

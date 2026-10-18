@@ -44,7 +44,8 @@ pypost/
 │   └── test_app.py   # Pytest suite (Starlette TestClient)
 ├── .github/workflows/ci.yml
 ├── static/
-│   ├── custom.css    # Theme (edit CSS variables to restyle)
+│   ├── theme.css     # Colors & fonts (yours — never overwritten by update)
+│   ├── custom.css    # Layout & components (template-owned, rarely edited)
 │   ├── vendor/       # Vendored PicoCSS (self-hosted, no CDN)
 │   ├── fonts/        # Self-hosted Inter + JetBrains Mono (woff2)
 │   ├── favicon.svg
@@ -109,7 +110,7 @@ Raw HTML in post/page Markdown is **escaped by design** (Mistune runs with `esca
 All frontend assets are self-hosted — no CDN requests leave the site:
 
 - `static/vendor/pico.classless.min.css` — PicoCSS v2 (MIT), vendored as-is
-- `static/fonts/` — Inter and JetBrains Mono (latin subsets, variable), referenced by `@font-face` rules in `static/custom.css`
+- `static/fonts/` — Inter and JetBrains Mono (latin subsets, variable), referenced by `@font-face` rules in `static/theme.css`
 
 ---
 
@@ -154,7 +155,11 @@ Adding a third language: add its code to `SUPPORTED_LANGS`, create `posts/{lang}
 
 ## Changing the theme
 
-All colors are CSS variables in `static/custom.css`. Edit the `:root / [data-theme="dark"]` block for dark mode and `[data-theme="light"]` for light mode.
+All colors and fonts are CSS variables in `static/theme.css` — the file you
+edit. (`static/custom.css` holds the layout and references those variables; it
+belongs to the template.) Edit the `:root / [data-theme="dark"]` block for
+dark mode, `[data-theme="light"]` for light mode, and `--font-body` /
+`--font-mono` for the typefaces.
 
 Key variables:
 

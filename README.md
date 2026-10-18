@@ -7,6 +7,7 @@ frameworks — just Markdown files and a single Python app.
 [Pygments](https://pygments.org) · [PicoCSS](https://picocss.com) · [Uvicorn](https://uvicorn.org)
 
 ```bash
+cd template
 uv sync --group dev
 uv run python main.py
 # → http://localhost:8000  (ES) · /en/  (EN)
@@ -18,7 +19,7 @@ pypost is a [Copier](https://copier.readthedocs.io) template — no forking, no
 find-and-replace:
 
 ```bash
-uvx copier copy --trust gh:GH-USER/pypost my-blog
+uvx copier copy --trust gh:darkestabed/pypost my-blog
 cd my-blog
 ```
 
@@ -28,7 +29,7 @@ other end — git initialized, dependencies synced, tests passing. Prefer a
 one-liner?
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/GH-USER/pypost/main/new.sh | sh -s my-blog
+curl -sSL https://raw.githubusercontent.com/darkestabed/pypost/main/new.sh | sh -s my-blog
 ```
 
 **Stay current:** as pypost gets fixes and features, run
@@ -58,44 +59,35 @@ on top of your saved answers. Your `config.py`, content, and styles stay yours.
 
 | Doc | What's in it |
 |---|---|
-| [`HOWTO.md`](HOWTO.md) | Start here — turn this template into your blog, step by step |
-| [`REQUIREMENTS.md`](REQUIREMENTS.md) | Reference — every frontmatter field, config variable, and deployment note |
+| [`template/HOWTO.md`](template/HOWTO.md) | Start here — customize your generated blog, step by step |
+| [`template/REQUIREMENTS.md`](template/REQUIREMENTS.md) | Reference — every frontmatter field, config variable, and deployment note |
 
-## Quick tour of the repo
+## Repository layout
 
 ```text
-main.py            The whole app (~800 lines): loading, components, routes
-config.py          Site identity, languages, navigation, UI strings
-posts/{lang}/      Blog posts — Markdown + YAML frontmatter
-pages/{lang}/      Static pages, auto-served at /pages/{lang}/{slug}
-static/            Self-hosted CSS, fonts, favicon (no CDN)
-tests/test_app.py  Route, feed, header, and security regression tests
-Procfile           Railway deployment
+copier.yml         Questions, exclusions, and tasks for generation
+new.sh             One-liner wrapper: curl | sh → copier copy
+template/          Everything that ships to a generated blog
+  main.py            The whole app (~800 lines): loading, components, routes
+  config.py          Site identity, languages, navigation, UI strings
+  config.py.jinja    Rendered into the instance's config.py from the answers
+  posts/{lang}/      Blog posts — Markdown + YAML frontmatter
+  pages/{lang}/      Static pages, auto-served at /pages/{lang}/{slug}
+  static/            Self-hosted CSS, fonts, favicon (no CDN)
+  tests/test_app.py  Config-driven route, feed, header, and security tests
+  Procfile           Railway deployment
 ```
 
-### Template files
-
-This repo doubles as the Copier template source. Convention:
-
-- `*.jinja` files are rendered at generation time from the answers in
-  `copier.yml` (`config.py.jinja` → the instance's `config.py`, and so on)
-- A plain file sitting next to its `.jinja` sibling (`README.md`, `LICENSE`,
-  `.gitignore`, `ci.yml`, …) belongs to this repo itself and is skipped during
-  generation
-- Files wrapped in conditional names (`{% if license == 'agpl' %}LICENSE{% endif %}`)
-  are emitted only for the matching answers
+Copier's `_subdirectory: template` setting makes the split explicit: the repo
+root holds the template *tooling*; a generated blog contains only what lives in
+`template/`. Inside `template/`, `*.jinja` files are rendered at generation
+time — everything else ships verbatim. To hack on the engine, work inside
+`template/` — it's a fully runnable blog on its own.
 
 ## Deploy
 
-Railway (or any uvicorn host):
-
-```bash
-uv sync
-SITE_URL=https://your.blog uv run uvicorn main:app --host 0.0.0.0 --port $PORT
-```
-
-See [`HOWTO.md`](HOWTO.md) for the full customization walkthrough — colors,
-fonts, a third language, highlight themes, and more.
+Generated blogs deploy like any uvicorn app (Railway-ready via `Procfile`) —
+see the generated README. This repo is a template and is not deployed itself.
 
 ## License
 

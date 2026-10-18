@@ -298,6 +298,7 @@ function copyCode(btn) {
 favicon     = Link(rel="icon", href="/static/favicon.svg", type="image/svg+xml")
 pico_css    = Link(rel="stylesheet", href="/static/vendor/pico.classless.min.css")
 pygments_css = Link(rel="stylesheet", href="/static/pygments.css")
+theme_css   = Link(rel="stylesheet", href="/static/theme.css")
 custom_css  = Link(rel="stylesheet", href="/static/custom.css")
 
 # default_hdrs=False drops FastHTML's CDN scripts (htmx, fasthtml.js, surreal,
@@ -333,7 +334,7 @@ def _before(req):
 app = FastHTML(
     default_hdrs=False,
     before=_before,
-    hdrs=(charset, viewport, favicon, theme_init, pico_css, pygments_css, custom_css, copy_script),
+    hdrs=(charset, viewport, favicon, theme_init, pico_css, pygments_css, theme_css, custom_css, copy_script),
     htmlkw={"data-theme": "dark"},
 )
 
