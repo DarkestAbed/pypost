@@ -26,10 +26,11 @@ jobs:
         run: |
           # `from fasthtml.common import *` makes pyflakes warn about every FT
           # component name ("may be undefined, or defined from star imports").
-          # Filter those; anything left is a real finding.
+          # Filter those; anything left is a real finding. `uv run` can also
+          # print a VIRTUAL_ENV warning on stdout in CI — ignore "warning:".
           out=$(uv run python -m pyflakes main.py config.py)
           echo "$out"
-          if echo "$out" | grep -vE "star imports|unable to detect undefined names" | grep -q .; then exit 1; fi
+          if echo "$out" | grep -vE "^warning:|star imports|unable to detect undefined names" | grep -q .; then exit 1; fi
 
       - name: Pytest
         run: uv run pytest -q
