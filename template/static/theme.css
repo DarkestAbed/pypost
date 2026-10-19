@@ -1,6 +1,6 @@
 /* ============================================================
    pypost — site theme (yours to edit)
-   Colors, fonts, and the dark/light palettes live here.
+   Colors, fonts, page width, and the dark/light palettes live here.
    Layout and components live in custom.css (owned by the
    template — you rarely need to touch it).
 
@@ -31,6 +31,19 @@
   --font-body: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 }
+
+/* ── Layout ──
+   Uncomment and change any of these to resize the page.
+   The defaults (shown) live in custom.css. */
+/*
+:root {
+  --content-width: 1180px;
+  --gutter:        clamp(1rem, 3vw, 2rem);
+  --toc-width:     240px;
+  --measure:       70ch;
+  --font-size-max: 112.5%;
+}
+*/
 
 /* ── Color tokens ── */
 :root,
